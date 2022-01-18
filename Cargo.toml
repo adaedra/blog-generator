@@ -1,0 +1,11 @@
+[package]
+name = "blog"
+version = "0.1.0"
+edition = "2021"
+license = "EUPL-1.2"
+
+[dependencies]
+anyhow = "1.0"
+dolmen = { path = "../pastex/dolmen" }
+glob = "0.3"
+pastex = { path = "../pastex/pastex" }
