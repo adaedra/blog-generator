@@ -1,6 +1,6 @@
 use dolmen::{tag, ElementBox, Fragment, HtmlDocument, IntoElementBox, Tag};
 use pastex::output::html;
-use std::{fs, path::Path, io::Write};
+use std::{fs, io::Write, path::Path};
 
 #[derive(serde::Deserialize)]
 struct BlogData {
@@ -14,7 +14,7 @@ fn articles() -> anyhow::Result<Vec<ElementBox>> {
             let document = pastex::document::process(&article).unwrap();
 
             let title = document.metadata.title.as_ref().unwrap().to_string();
-            let (document_block, abstract_block) = html::output(document);
+            let (document_block, abstract_block) = html::output(&document);
 
             tag!(box article {
                 tag!(h1 { &title; });
