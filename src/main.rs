@@ -1,4 +1,4 @@
-use dolmen::{tag, ElementBox, HtmlDocument, IntoElementBox};
+use dolmen::{tag, ElementBox, Fragment, HtmlDocument, IntoElementBox, Tag};
 use pastex::output::html;
 
 #[derive(serde::Deserialize)]
@@ -16,7 +16,7 @@ fn articles() -> anyhow::Result<Vec<ElementBox>> {
             let (document_block, abstract_block) = html::output(document);
 
             tag!(box article {
-                tag!(h1 { title; });
+                tag!(h1 { &title; });
                 abstract_block.map(|block| tag!(div => block));
                 tag!(div => document_block);
             })
@@ -24,23 +24,27 @@ fn articles() -> anyhow::Result<Vec<ElementBox>> {
         .collect())
 }
 
+fn layout(options: &BlogData, inner: Fragment) -> Tag<dolmen::html::html> {
+    tag!(html(lang = "en") {
+        tag!(head {
+            tag!(meta(charset = "utf-8"));
+            tag!(title { &options.title; });
+        });
+        tag!(body {
+            tag!(nav {
+                tag!(a(href = "/") { &options.title; });
+            });
+
+            tag!(main { inner; });
+        });
+    })
+}
+
 fn main() -> anyhow::Result<()> {
     let options = std::fs::read_to_string("../blog-data/blog.toml")?;
     let options: BlogData = toml::from_str(&options)?;
 
-    let document = HtmlDocument(tag!(html(lang = "en") {
-        tag!(head {
-            tag!(meta(charset = "utf-8"));
-            tag!(title { options.title.clone(); });
-        });
-        tag!(body {
-            tag!(nav {
-                tag!(a(href="/") { options.title; });
-            });
-
-            tag!(main => articles()?);
-        });
-    }));
+    let document = HtmlDocument(layout(&options, Fragment::from(articles()?)));
 
     println!("{}", document);
     Ok(())
