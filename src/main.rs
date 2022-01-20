@@ -1,5 +1,6 @@
 use dolmen::{tag, ElementBox, Fragment, HtmlDocument, IntoElementBox, Tag};
 use pastex::output::html;
+use std::{fs, path::Path, io::Write};
 
 #[derive(serde::Deserialize)]
 struct BlogData {
@@ -41,11 +42,17 @@ fn layout(options: &BlogData, inner: Fragment) -> Tag<dolmen::html::html> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let options = std::fs::read_to_string("../blog-data/blog.toml")?;
+    let options = fs::read_to_string("../blog-data/blog.toml")?;
     let options: BlogData = toml::from_str(&options)?;
 
-    let document = HtmlDocument(layout(&options, Fragment::from(articles()?)));
+    let output_dir = Path::new("output");
+    if !output_dir.is_dir() {
+        fs::create_dir(output_dir)?;
+    }
 
-    println!("{}", document);
+    let document = HtmlDocument(layout(&options, Fragment::from(articles()?)));
+    let mut output = fs::File::create(output_dir.join("index.html"))?;
+    writeln!(output, "{}", document)?;
+
     Ok(())
 }
