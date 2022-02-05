@@ -158,7 +158,7 @@ fn layout(
         .map(|social| {
             tag!(box a(href = social.url, target = "_blank", title = social.name) {
                 tag!(svg(xmlns = "http://www.w3.org/2000/svg", viewbox = "0 0 30 30", alt = social.name) {
-                    tag!(r#use(href = format!("{}#{}", manifest.asset("header.png"), social.icon_name)));
+                    tag!(r#use(href = format!("{}#{}", manifest.asset("icons.svg"), social.icon_name)));
                 });
                 tag!(span { &social.name; });
             })
