@@ -7,6 +7,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
 };
+use time::Date;
 
 #[derive(serde::Deserialize)]
 struct Social {
@@ -67,12 +68,15 @@ impl AssetManifest for WebpackManifest {
 struct Article {
     document: Document,
     path: PathBuf,
+    date: Date,
 }
 
 fn index(blog_data: &BlogData, articles: &[Article]) -> Vec<ElementBox> {
+    let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
     let tagline = html::output_fragment(&pastex::document::process_fragment(&blog_data.tagline));
     let articles = articles
         .iter()
+        .rev()
         .map(|article| {
             let title = article
                 .document
@@ -84,9 +88,10 @@ fn index(blog_data: &BlogData, articles: &[Article]) -> Vec<ElementBox> {
             let (_, summary) = html::output(&article.document);
             let path = article.path.file_stem().unwrap().to_str().unwrap();
 
-            tag!(box article {
-                tag!(h3 {
-                    tag!(a(href = format!("/{}/", path)) { &title; });
+            tag!(box article(class = "article-preview") {
+                tag!(a(href = format!("/{:04}/{:02}/{}/", article.date.year(), article.date.iso_week(), path)) {
+                    tag!(p { &article.date.format(&date_format).unwrap(); });
+                    tag!(h3 { &title; });
                 });
                 summary.map(|block| tag!(div => block));
             })
@@ -110,19 +115,34 @@ fn index(blog_data: &BlogData, articles: &[Article]) -> Vec<ElementBox> {
 }
 
 fn articles() -> anyhow::Result<Vec<Article>> {
-    glob::glob("../blog-data/articles/**/*.px")?
+    let date_format = time::format_description::parse("[year]-[month]-[day]")?;
+
+    let articles = glob::glob("../blog-data/articles/**/*.px")?
         .map(|path| path.map_err(Into::into))
         .map(|path| {
             path.and_then(|path| {
                 let document = pastex::document::process(&path)?;
 
-                Ok(Article { document, path })
+                Ok((document, path))
             })
         })
-        .collect()
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut articles: Vec<Article> = articles
+        .into_iter()
+        .filter(|(document, _)| !document.metadata.draft && document.metadata.date.is_some())
+        .map(|(document, path)| Article {
+            path,
+            date: Date::parse(document.metadata.date.as_ref().unwrap(), &date_format).unwrap(),
+            document,
+        })
+        .collect();
+
+    articles.sort_unstable_by_key(|item| item.date);
+    Ok(articles)
 }
 
 fn article_page(article: &Article) -> Vec<ElementBox> {
+    let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
     let title = article
         .document
         .metadata
@@ -132,15 +152,18 @@ fn article_page(article: &Article) -> Vec<ElementBox> {
         .to_string();
     let (contents, summary) = html::output(&article.document);
 
-    let inner = vec![tag!(box header { tag!(h1 { &title; }); } )]
-        .into_iter()
-        .chain(
-            summary
-                .map(|summary| tag!(box div(class = "abstract") => summary))
-                .into_iter(),
-        )
-        .chain(contents)
-        .collect();
+    let inner = vec![tag!(box header {
+        tag!(p { &article.date.format(&date_format).unwrap(); });
+        tag!(h1 { &title; });
+    } )]
+    .into_iter()
+    .chain(
+        summary
+            .map(|summary| tag!(box div(class = "abstract") => summary))
+            .into_iter(),
+    )
+    .chain(contents)
+    .collect();
 
     vec![tag!(box main(class = "main-wrapper") => inner)]
 }
@@ -234,9 +257,15 @@ fn main() -> anyhow::Result<()> {
             manifest.as_ref(),
             Fragment::from(article_page(&article)),
         ));
-        let path = output_dir.join(article.path.file_stem().unwrap());
+        let path = output_dir
+            .join(format!(
+                "{:04}/{:02}",
+                article.date.year(),
+                article.date.iso_week()
+            ))
+            .join(article.path.file_stem().unwrap());
         if !path.is_dir() {
-            fs::create_dir(&path)?;
+            fs::create_dir_all(&path)?;
         }
 
         let mut output = fs::File::create(path.join("index.html"))?;
