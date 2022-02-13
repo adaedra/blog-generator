@@ -35,6 +35,7 @@ dependencies = [
  "anyhow",
  "dolmen",
  "glob",
+ "once_cell",
  "pastex",
  "serde",
  "time",
