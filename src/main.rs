@@ -1,8 +1,6 @@
-use clap::Parser;
 use dolmen::{tag, ElementBox, Fragment, HtmlDocument, IntoElementBox, Tag};
 use pastex::{document::Document, output::html};
 use std::{
-    collections::HashMap,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -22,47 +20,8 @@ struct BlogData {
     tagline: String,
     footer: String,
     socials: Vec<Social>,
-}
-
-#[derive(Parser)]
-struct CliOptions {
-    #[clap(long)]
-    production: bool,
-    #[clap(long)]
-    manifest: Option<PathBuf>,
-}
-
-trait AssetManifest {
-    fn asset(&self, name: &str) -> String;
-}
-
-struct NoopAssetManifest;
-
-impl AssetManifest for NoopAssetManifest {
-    fn asset(&self, name: &str) -> String {
-        format!("/assets/{}", name)
-    }
-}
-
-struct WebpackManifest(HashMap<String, String>);
-
-impl WebpackManifest {
-    fn from(path: &Path) -> anyhow::Result<WebpackManifest> {
-        let reader = fs::File::open(path)?;
-        let map = serde_json::from_reader(reader)?;
-
-        Ok(WebpackManifest(map))
-    }
-}
-
-impl AssetManifest for WebpackManifest {
-    fn asset(&self, name: &str) -> String {
-        self.0
-            .get(name)
-            .map(Clone::clone)
-            // TODO: Warn of missing asset
-            .unwrap_or_else(|| format!("/assets/{}", name))
-    }
+    #[serde(default)]
+    stylesheets: Vec<String>,
 }
 
 struct Article {
@@ -168,12 +127,7 @@ fn article_page(article: &Article) -> Vec<ElementBox> {
     vec![tag!(box main(class = "main-wrapper") => inner)]
 }
 
-fn layout(
-    blog_data: &BlogData,
-    options: &CliOptions,
-    manifest: &dyn AssetManifest,
-    inner: Fragment,
-) -> Tag<dolmen::html::html> {
+fn layout(blog_data: &BlogData, inner: Fragment) -> Tag<dolmen::html::html> {
     let footer = html::output_fragment(&pastex::document::process_fragment(&blog_data.footer));
     let socials = blog_data
         .socials
@@ -181,11 +135,16 @@ fn layout(
         .map(|social| {
             tag!(box a(href = social.url, target = "_blank", title = social.name) {
                 tag!(svg(xmlns = "http://www.w3.org/2000/svg", viewbox = "0 0 30 30", alt = social.name) {
-                    tag!(r#use(href = format!("{}#{}", manifest.asset("icons.svg"), social.icon_name)));
+                    tag!(r#use(href = format!("/assets/icons.svg#{}", social.icon_name)));
                 });
                 tag!(span { &social.name; });
             })
         })
+        .collect();
+    let stylesheets = blog_data
+        .stylesheets
+        .iter()
+        .map(|stylesheet| tag!(box link(rel = "stylesheet", type = "text/css", href = stylesheet)))
         .collect();
 
     tag!(html(lang = "en") {
@@ -194,8 +153,7 @@ fn layout(
             tag!(meta(name = "viewport", content = "width=device-width, initial-scale=1"));
 
             tag!(title { &blog_data.title; });
-            // Keep only for production. In development, we use webpack.
-            options.production.then(|| tag!(link(rel = "stylesheet", type = "text/css", href = manifest.asset("main.css"))));
+            Fragment::from(stylesheets);
         });
         tag!(body {
             tag!(nav {
@@ -214,8 +172,6 @@ fn layout(
             inner;
 
             tag!(footer => footer);
-
-            (!options.production).then(|| tag!(script(type = "text/javascript", src = manifest.asset("main.js")) { Fragment::empty(); }));
         });
     })
 }
@@ -223,14 +179,6 @@ fn layout(
 fn main() -> anyhow::Result<()> {
     let blog_data = fs::read_to_string("../blog-data/blog.toml")?;
     let blog_data: BlogData = toml::from_str(&blog_data)?;
-    let options = CliOptions::parse();
-    let manifest = options
-        .manifest
-        .as_ref()
-        .map(|path| WebpackManifest::from(&path))
-        .transpose()?
-        .map(|manifest| Box::new(manifest) as Box<dyn AssetManifest>)
-        .unwrap_or_else(|| Box::new(NoopAssetManifest));
 
     let output_dir = Path::new("output");
     if !output_dir.is_dir() {
@@ -242,8 +190,6 @@ fn main() -> anyhow::Result<()> {
     {
         let document = HtmlDocument(layout(
             &blog_data,
-            &options,
-            manifest.as_ref(),
             Fragment::from(index(&blog_data, &articles)),
         ));
         let mut output = fs::File::create(output_dir.join("index.html"))?;
@@ -251,12 +197,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     for article in articles {
-        let document = HtmlDocument(layout(
-            &blog_data,
-            &options,
-            manifest.as_ref(),
-            Fragment::from(article_page(&article)),
-        ));
+        let document = HtmlDocument(layout(&blog_data, Fragment::from(article_page(&article))));
         let path = output_dir
             .join(format!(
                 "{:04}/{:02}",
