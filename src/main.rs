@@ -137,7 +137,7 @@ fn layout(blog_data: &BlogData, inner: Fragment) -> Tag<dolmen::html::html> {
         .iter()
         .map(|social| {
             tag!(box a(href = social.url, target = "_blank", title = social.name) {
-                tag!(svg(xmlns = "http://www.w3.org/2000/svg", viewbox = "0 0 30 30", alt = social.name) {
+                tag!(svg(xmlns = "http://www.w3.org/2000/svg", viewbox = "0 0 16 16", alt = social.name) {
                     tag!(r#use(href = format!("/assets/icons.svg#{}", social.icon_name)));
                 });
                 tag!(span { &social.name; });
