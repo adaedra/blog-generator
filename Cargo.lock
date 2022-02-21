@@ -34,6 +34,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dolmen",
+ "dolmen_dsl",
  "glob",
  "once_cell",
  "pastex",
@@ -54,6 +55,10 @@ version = "0.1.0"
 dependencies = [
  "html-escape",
 ]
+
+[[package]]
+name = "dolmen_dsl"
+version = "0.1.0"
 
 [[package]]
 name = "either"
@@ -172,6 +177,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dolmen",
+ "dolmen_dsl",
  "log",
  "nom",
  "once_cell",

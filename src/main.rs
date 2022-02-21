@@ -1,10 +1,10 @@
-use dolmen::{tag, ElementBox, Fragment, HtmlDocument, IntoElementBox, Tag};
+use dolmen::{prelude::*, Fragment};
+use dolmen_dsl::element as tag;
 use once_cell::sync::Lazy;
 use pastex::{document::Document, output::html};
 use std::{
-    fs,
-    io::Write,
-    iter,
+    fmt, fs,
+    iter::once,
     path::{Path, PathBuf},
 };
 use time::{format_description::FormatItem, Date};
@@ -35,11 +35,11 @@ struct Article {
     date: Date,
 }
 
-fn separator() -> ElementBox {
-    tag!(box p(class = "bl-separator", role = "presentation") { "\u{25C7}"; })
+fn separator() -> dolmen::Element {
+    tag!(p[class: "bl-separator", role: "presentation"] {{ "\u{25C7}" }})
 }
 
-fn article_preview(article: &Article) -> ElementBox {
+fn article_preview(article: &Article) -> Box<dyn Node> {
     let title = article
         .document
         .metadata
@@ -50,33 +50,37 @@ fn article_preview(article: &Article) -> ElementBox {
     let (_, summary) = html::output(&article.document);
     let path = article.path.file_stem().unwrap().to_str().unwrap();
 
-    tag!(box article(class = "bl-article-preview") {
-        tag!(a(href = format!("/{:04}/{:02}/{}/", article.date.year(), article.date.iso_week(), path)) {
-            tag!(p { &article.date.format(&DATE_FORMAT).unwrap(); });
-            tag!(h3 { &title; });
-        });
-        summary.map(|block| tag!(div => block));
-    })
+    tag!(article[class: "bl-article-preview"] {
+        a[href: { format!("/{:04}/{:02}/{}/", article.date.year(), article.date.iso_week(), path) }] {
+            p {{ article.date.format(&DATE_FORMAT).unwrap() }};
+            h3 {{ title }};
+        };
+        { summary.map(|block| tag!(div {{ block }}).into_node()).unwrap_or_else(|| Fragment::empty().into_node()) };
+    }).into_node()
 }
 
-fn index(blog_data: &BlogData, articles: &[Article]) -> Vec<ElementBox> {
+fn index(blog_data: &BlogData, articles: &[Article]) -> Fragment {
     let tagline = html::output_fragment(&pastex::document::process_fragment(&blog_data.tagline));
-    let articles = articles.iter().rev().map(article_preview).collect();
+    let articles = Fragment::new(articles.iter().rev().map(article_preview));
 
-    vec![tag!(box main {
-        tag!(box div(class = "bl-main-wrapper") {
-            tag!(header(class = "bl-home") {
-                tag!(h1 { &blog_data.title; });
-                tag!(p => tagline);
-            });
-        });
-        tag!(box div(class="bl-main-wrapper") {
-            tag!(header {
-                tag!(h2 { "Latest articles"; });
-            });
-            Fragment::from(articles);
-        });
-    })]
+    Fragment::new([
+        tag!(main {
+            div[class: "bl-main-wrapper"] {
+                header[class: "bl-home"] {
+                    h1 {{ &blog_data.title }};
+                    p {{ tagline }};
+                }
+            }
+        })
+        .into_node(),
+        tag!(div[class: "bl-main-wrapper"] {
+            header {
+                h2 {{ "Latest articles" }};
+            }
+            {{ articles }}
+        })
+        .into_node(),
+    ])
 }
 
 fn articles() -> anyhow::Result<Vec<Article>> {
@@ -104,7 +108,7 @@ fn articles() -> anyhow::Result<Vec<Article>> {
     Ok(articles)
 }
 
-fn article_page(article: &Article) -> Vec<ElementBox> {
+fn article_page(article: &Article) -> Fragment {
     let title = article
         .document
         .metadata
@@ -114,74 +118,81 @@ fn article_page(article: &Article) -> Vec<ElementBox> {
         .to_string();
     let (contents, summary) = html::output(&article.document);
 
-    let inner = vec![tag!(box header {
-        tag!(p { &article.date.format(&DATE_FORMAT).unwrap(); });
-        tag!(h1 { &title; });
-    } )]
-    .into_iter()
-    .chain(
-        summary
-            .map(|summary| tag!(box div(class = "bl-abstract") => summary.into_iter().chain(iter::once(separator())).collect()))
-            .into_iter(),
-    )
-    .chain(contents)
-    .collect();
+    let tag = tag!(main[class: "bl-main-wrapper"] {
+        header {
+            p {{ article.date.format(&DATE_FORMAT).unwrap() }};
+            h1 {{ title }};
+        }
+        { summary.map(|summary| {
+            tag!(div[class: "bl-abstract"] {
+                { summary };
+                { separator() };
+            }).into_node()
+        }).unwrap_or_else(|| Fragment::empty().into_node()) };
+        { contents };
+    });
 
-    vec![tag!(box main(class = "bl-main-wrapper") => inner)]
+    Fragment::new(once(tag.into_node()))
 }
 
-fn layout(blog_data: &BlogData, inner: Fragment) -> Tag<dolmen::html::html> {
+fn layout(blog_data: &BlogData, inner: Fragment) -> Fragment {
     let footer = html::output_fragment(&pastex::document::process_fragment(&blog_data.footer));
-    let socials = blog_data
-        .socials
-        .iter()
-        .map(|social| {
-            tag!(box a(href = social.url, target = "_blank", title = social.name) {
-                tag!(svg(xmlns = "http://www.w3.org/2000/svg", viewbox = "0 0 16 16", alt = social.name) {
-                    tag!(r#use(href = format!("/assets/icons.svg#{}", social.icon_name)));
-                });
-                tag!(span { &social.name; });
-            })
+    let socials = Fragment::new(blog_data.socials.iter().map(|social| {
+        tag!(a[href: {social.url.clone()}, target: "_blank", title: {social.name.clone()}] {
+            svg[xmlns: "http://www.w3.org/2000/svg", viewbox: "0 0 16 16", alt: {social.name.clone()}] {
+                use[href: {format!("/assets/icons.svg#{}", social.icon_name)}]
+            };
+            span {{ &social.name }};
         })
-        .collect();
-    let stylesheets = blog_data
-        .stylesheets
-        .iter()
-        .map(|stylesheet| tag!(box link(rel = "stylesheet", type = "text/css", href = stylesheet)))
-        .collect();
+        .into_node()
+    }));
+    let stylesheets = Fragment::new(blog_data.stylesheets.iter().map(|stylesheet| {
+        tag!(link[rel: "stylesheet", type: "text/css", href: {stylesheet.clone()}]).into_node()
+    }));
 
-    tag!(html(lang = "en") {
-        tag!(head {
-            tag!(meta(charset = "utf-8"));
-            tag!(meta(name = "viewport", content = "width=device-width, initial-scale=1"));
-
-            tag!(title { &blog_data.title; });
-            Fragment::from(stylesheets);
-        });
-        tag!(body {
-            tag!(nav {
-                tag!(div(class = "bl-wrapper") {
-                    tag!(a(href = "/") { &blog_data.title; });
-                    tag!(a(href = "/articles/") { "Articles"; });
-                    tag!(a(href = "/me/") { "About me"; });
-                    tag!(span(class = "bl-separator") { Fragment::empty(); });
-                    Fragment::from(socials);
-                });
-            });
-
-            inner;
-
-            tag!(footer {
-                tag!(div(class = "bl-wrapper") => iter::once(separator()).chain(footer).collect());
-            });
-        });
-    })
+    let html = tag!(html[lang: "en"] {
+        head {
+            meta[charset: "utf-8"];
+            meta[name: "viewport", content: "width=device-width, initial-scale=1"];
+            title {{ &blog_data.title }};
+            { stylesheets };
+        }
+        body {
+            nav {
+                div[class: "bl-wrapper"] {
+                    a[href: "/"] {{ &blog_data.title }};
+                    a[href: "/articles/"] {{ "Articles" }};
+                    a[href: "/me/"] {{ "About me" }};
+                    span[class: "bl-separator"] {{ Fragment::empty() }};
+                    { socials };
+                }
+            }
+            { inner };
+            footer {
+                div[class: "bl-wrapper"] {
+                    { separator() };
+                    { footer };
+                }
+            };
+        }
+    });
+    Fragment::new(once(html.into_node()))
 }
 
-fn article_list(articles: &[Article]) -> Vec<ElementBox> {
-    vec![
-        tag!(box div(class = "bl-main-wrapper") => articles.iter().rev().map(article_preview).collect()),
-    ]
+fn article_list(articles: &[Article]) -> Fragment {
+    let articles = Fragment::new(articles.iter().rev().map(article_preview));
+    Fragment::new(once(
+        tag!(div[class: "bl-main-wrapper"] {{ articles }}).into_node(),
+    ))
+}
+
+struct HtmlDocument(Fragment);
+
+impl fmt::Display for HtmlDocument {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "<!DOCTYPE html>")?;
+        self.0.fmt(f)
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -200,8 +211,7 @@ fn main() -> anyhow::Result<()> {
             &blog_data,
             Fragment::from(index(&blog_data, &articles)),
         ));
-        let mut output = fs::File::create(output_dir.join("index.html"))?;
-        writeln!(output, "{}", document)?;
+        fs::write(output_dir.join("index.html"), document.to_string())?;
     }
 
     {
@@ -238,13 +248,13 @@ fn main() -> anyhow::Result<()> {
         .map(|path| {
             let document = pastex::document::process(&path).unwrap();
             let (result, _) = html::output(&document);
-            let page = tag!(box main(class = "bl-main-wrapper") {
-                tag!(header {
-                    tag!(h1 { &document.metadata.title.unwrap(); });
-                });
-                Fragment::from(result);
+            let page = tag!(main[class: "bl-main-wrapper"] {
+                header {
+                    h1 {{ document.metadata.title.unwrap() }};
+                }
+                { result }
             });
-            let page = layout(&blog_data, Fragment::from(vec![page]));
+            let page = layout(&blog_data, Fragment::new(once(page.into_node())));
 
             (path, page)
         });
