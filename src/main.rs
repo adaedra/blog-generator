@@ -165,7 +165,9 @@ fn layout(blog_data: &BlogData, inner: Fragment) -> Fragment {
                     a[href: "/me/"] {{ "About me" }};
                     span[class: "bl-separator"] {{ Fragment::empty() }};
                     { socials };
-                }
+                };
+                div[class: "ua ua-blue"] {{ "" }};
+                div[class: "ua ua-yellow"] {{ "" }};
             }
             { inner };
             footer {
